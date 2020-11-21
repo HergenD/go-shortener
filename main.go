@@ -16,12 +16,20 @@ import (
 )
 
 var domains = map[string]bool{
-	"https://365.works/":  true,
-	"https://365werk.nl/": true,
-	"https://google.com/": false,
+	"https://365.works/":    true,
+	"https://365werk.nl/":   true,
+	"https://s.365werk.nl/": true,
+	"https://google.com/":   false,
 }
 
+var defaultDomain string = "https://365.works/"
+
+var port string = ":8080"
+
 var databases = map[string]map[string]string{}
+
+var database_type string = "mysql"
+var database_connection string = "root:@tcp(127.0.0.1:3306)/go-shortener"
 
 // Struct for json from POST:/new/basic route
 type BasicUrl struct {
@@ -48,6 +56,12 @@ func getUrl(c *gin.Context) {
 	origin := location.Get(c)
 	shortUrl := c.Param("url")
 	baseDomain := "https://" + origin.Host + "/"
+
+	// Allows localhost origin to act as default domain for dev purposes
+	if origin.Host == "localhost"+port {
+		baseDomain = defaultDomain
+	}
+
 	longUrl, ok := databases[baseDomain][shortUrl]
 	if ok {
 		c.Redirect(http.StatusMovedPermanently, longUrl)
@@ -74,14 +88,14 @@ func postBasicUrl(c *gin.Context) {
 	// baseDomain := json.Domain
 	if json.Domain != "" && domains[json.Domain] {
 		baseDomain = json.Domain
-	} else {
+	} else if domains[json.Domain] {
 		baseDomain = "https://" + origin.Host + "/"
-		databases[baseDomain] = map[string]string{}
+	} else {
+		baseDomain = defaultDomain
 	}
-	fmt.Println(json.Domain)
 
 	// Connect to database
-	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/go-shortener")
+	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +170,7 @@ type Entries struct {
 
 func main() {
 	fmt.Println(color.CyanString("Connecting"), "to database...")
-	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/go-shortener")
+	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
 		panic(err)
 	}
@@ -189,7 +203,7 @@ func main() {
 		panic(err)
 	}
 
-	for domain, _ := range domains {
+	for domain := range domains {
 		databases[domain] = map[string]string{}
 	}
 	for res.Next() {
@@ -206,5 +220,5 @@ func main() {
 	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
 	// Listen and Server in 0.0.0.0:8080
-	r.Run(":8080")
+	r.Run(port)
 }
