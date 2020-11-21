@@ -41,6 +41,14 @@ func setupRouter() *gin.Engine {
 
 	r := gin.Default()
 	r.Use(location.Default())
+
+	r.Use(location.New(location.Config{
+		Scheme:  "https",
+		Host:    "365.works",
+		Base:    "/",
+		Headers: location.Headers{Scheme: "X-Forwarded-Proto", Host: "X-Forwarded-Host"},
+	}))
+
 	//Routes
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "https://365werk.nl")
@@ -78,6 +86,7 @@ func getAll(c *gin.Context) {
 func postBasicUrl(c *gin.Context) {
 	// Bind JSON from request to variable and set some initials variables
 	origin := location.Get(c)
+	fmt.Println(origin)
 	var json BasicUrl
 	if c.BindJSON(&json) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"required": "url"})
@@ -219,6 +228,5 @@ func main() {
 	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
 	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
-	// Listen and Server in 0.0.0.0:8080
 	r.Run(port)
 }
