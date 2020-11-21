@@ -6,28 +6,37 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/fatih/color"
+	"github.com/gin-contrib/location"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var domains = []string{
-	"https://365.works/",
-	"https://365werk.nl/",
+var domains = map[string]bool{
+	"https://365.works/":  true,
+	"https://365werk.nl/": true,
+	"https://google.com/": false,
 }
 
 var databases = map[string]map[string]string{}
 
+// Struct for json from POST:/new/basic route
 type BasicUrl struct {
-	Url string `form:"url" json:"url" binding:"required"`
+	Url    string `form:"url" json:"url" binding:"required"`
+	Domain string `form:"domain" json:"domain"`
 }
 
 func setupRouter() *gin.Engine {
 
 	r := gin.Default()
-
+	r.Use(location.Default())
 	//Routes
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "https://365werk.nl")
+	})
 	r.GET("/:url", getUrl)
 	r.POST("/get/all", getAll)
 	r.POST("/new/basic", postBasicUrl)
@@ -36,8 +45,9 @@ func setupRouter() *gin.Engine {
 }
 
 func getUrl(c *gin.Context) {
+	origin := location.Get(c)
 	shortUrl := c.Param("url")
-	baseDomain := domains[0]
+	baseDomain := "https://" + origin.Host + "/"
 	longUrl, ok := databases[baseDomain][shortUrl]
 	if ok {
 		c.Redirect(http.StatusMovedPermanently, longUrl)
@@ -52,35 +62,72 @@ func getAll(c *gin.Context) {
 }
 
 func postBasicUrl(c *gin.Context) {
+	// Bind JSON from request to variable and set some initials variables
+	origin := location.Get(c)
 	var json BasicUrl
-	if c.BindJSON(&json) == nil {
-		longUrl := json.Url
-		baseDomain := domains[0]
-
-		short := createShort(6)
-		found := true
-		var shortUrl string
-		for found {
-			shortUrl, found = databases[baseDomain][short]
-		}
-		shortUrl = baseDomain + short
-		databases[baseDomain][short] = longUrl
-
-		db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/go-shortener")
-		if err != nil {
-			panic(err)
-		}
-		sql := "INSERT INTO entries(`Short`, `Long`, `Domain`) VALUES ('" + short + "', '" + longUrl + "', '" + baseDomain + "')"
-		fmt.Println(sql)
-		_, err = db.Exec(sql)
-		defer db.Close()
-
-		if err != nil {
-			panic(err.Error())
-		}
-
-		c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
+	if c.BindJSON(&json) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"required": "url"})
+		return
 	}
+	longUrl := json.Url
+	var baseDomain string
+	// baseDomain := json.Domain
+	if json.Domain != "" && domains[json.Domain] {
+		baseDomain = json.Domain
+	} else {
+		baseDomain = "https://" + origin.Host + "/"
+		databases[baseDomain] = map[string]string{}
+	}
+	fmt.Println(json.Domain)
+
+	// Connect to database
+	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/go-shortener")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	// Check if url has been shortened using the given domain
+	// if true, give previously created shortlink
+	var exists bool
+	exists_sql := "SELECT EXISTS(SELECT 1 FROM entries WHERE `Long`='" + longUrl + "' AND `Domain`='" + baseDomain + "')"
+	row := db.QueryRow(exists_sql)
+	if err := row.Scan(&exists); err != nil {
+		//
+	} else if exists {
+		entry_sql := "SELECT * FROM entries WHERE `Long`='" + longUrl + "' AND `Domain`='" + baseDomain + "' LIMIT 1"
+		entry_row := db.QueryRow(entry_sql)
+		var entry Entries
+		entry_row.Scan(&entry.Id, &entry.Long, &entry.Short, &entry.Domain)
+		shortUrl := baseDomain + entry.Short
+		c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
+		return
+	}
+
+	found := true
+	var shortUrl string
+	var short string
+
+	// Create short urlpart, and check if it exists, if it does, generate new short (loop)
+	for found {
+		short = createShort(6)
+		shortUrl, found = databases[baseDomain][short]
+	}
+
+	// Create full short url based on domain and update memory database with new short
+	shortUrl = baseDomain + short
+	databases[baseDomain][short] = longUrl
+
+	// Update MYSQL database wih new shortener
+	sql := "INSERT INTO entries(`Short`, `Long`, `Domain`) VALUES ('" + short + "', '" + longUrl + "', '" + baseDomain + "')"
+	_, err = db.Exec(sql)
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Return new shortener
+	c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -108,7 +155,7 @@ type Entries struct {
 }
 
 func main() {
-	fmt.Println("Connecting to database...")
+	fmt.Println(color.CyanString("Connecting"), "to database...")
 	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/go-shortener")
 	if err != nil {
 		panic(err)
@@ -123,7 +170,16 @@ func main() {
 		panic(err2)
 	}
 
-	fmt.Println(version)
+	fmt.Println(color.GreenString("Connected."), "Running version "+version)
+
+	var count int
+	count_sql := "SELECT COUNT(Id) FROM entries;"
+	row := db.QueryRow(count_sql)
+	if err := row.Scan(&count); err != nil {
+		//
+	}
+	count_string := strconv.Itoa(count)
+	fmt.Println(color.CyanString("Importing"), count_string+" entries from database...")
 
 	res, err := db.Query("SELECT * FROM entries")
 
@@ -133,10 +189,9 @@ func main() {
 		panic(err)
 	}
 
-	for _, domain := range domains {
+	for domain, _ := range domains {
 		databases[domain] = map[string]string{}
 	}
-
 	for res.Next() {
 		var entry Entries
 		err := res.Scan(&entry.Id, &entry.Long, &entry.Short, &entry.Domain)
@@ -147,8 +202,8 @@ func main() {
 
 		databases[entry.Domain][entry.Short] = entry.Long
 	}
-
-	fmt.Println("Starting Router...")
+	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
+	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
 	// Listen and Server in 0.0.0.0:8080
 	r.Run(":8080")
