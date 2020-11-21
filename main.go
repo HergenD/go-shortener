@@ -35,6 +35,7 @@ var database_connection string = "root:@tcp(127.0.0.1:3306)/go-shortener"
 type BasicUrl struct {
 	Url    string `form:"url" json:"url" binding:"required"`
 	Domain string `form:"domain" json:"domain"`
+	Custom string `form:"custom" json:"custom"`
 }
 
 func setupRouter() *gin.Engine {
@@ -86,7 +87,6 @@ func getAll(c *gin.Context) {
 func postBasicUrl(c *gin.Context) {
 	// Bind JSON from request to variable and set some initials variables
 	origin := location.Get(c)
-	fmt.Println(origin)
 	var json BasicUrl
 	if c.BindJSON(&json) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"required": "url"})
@@ -103,6 +103,43 @@ func postBasicUrl(c *gin.Context) {
 		baseDomain = defaultDomain
 	}
 
+	if json.Custom == "" {
+		c.JSON(http.StatusOK, createRandomShort(baseDomain, longUrl, c))
+	} else {
+		c.JSON(http.StatusOK, createCustomShort(json.Custom, baseDomain, longUrl, c))
+	}
+
+}
+
+func createCustomShort(custom string, baseDomain string, longUrl string, c *gin.Context) gin.H {
+	// Connect to database
+	db, err := sql.Open(database_type, database_connection)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	shortUrl, found := databases[baseDomain][custom]
+
+	if found {
+		return gin.H{"error": "This custom url already exists", "long": longUrl}
+	}
+
+	// Create full short url based on domain and update memory database with new short
+	shortUrl = baseDomain + custom
+	databases[baseDomain][custom] = longUrl
+
+	// Update MYSQL database wih new shortener
+	sql := "INSERT INTO entries(`Short`, `Long`, `Domain`) VALUES ('" + custom + "', '" + longUrl + "', '" + baseDomain + "')"
+	_, err = db.Exec(sql)
+
+	if err != nil {
+		panic(err.Error())
+	}
+	return gin.H{"short": shortUrl, "long": longUrl}
+}
+
+func createRandomShort(baseDomain string, longUrl string, c *gin.Context) gin.H {
 	// Connect to database
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
@@ -123,8 +160,7 @@ func postBasicUrl(c *gin.Context) {
 		var entry Entries
 		entry_row.Scan(&entry.Id, &entry.Long, &entry.Short, &entry.Domain)
 		shortUrl := baseDomain + entry.Short
-		c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
-		return
+		return gin.H{"short": shortUrl, "long": longUrl}
 	}
 
 	found := true
@@ -148,9 +184,7 @@ func postBasicUrl(c *gin.Context) {
 	if err != nil {
 		panic(err.Error())
 	}
-
-	// Return new shortener
-	c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
+	return gin.H{"short": shortUrl, "long": longUrl}
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
