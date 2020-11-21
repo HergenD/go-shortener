@@ -13,7 +13,28 @@ import (
 	"github.com/gin-contrib/location"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/ilyakaznacheev/cleanenv"
 )
+
+type ConfigServer struct {
+	Port string `json:"port" env:"PORT" env-default:"5432"`
+}
+
+type ConfigDb struct {
+	Type     string `json:"type" env:"TYPE" env-default:"mysql"`
+	User     string `json:"user" env:"USER" env-default:"root"`
+	Password string `json:"password" env:"PASSWORD" env-default:""`
+	Host     string `json:"host" env:"HOST" env-default:"localhost"`
+	Port     string `json:"port" env:"PORT" env-default:"3306"`
+	Name     string `json:"name" env:"NAME" env-default:"go-shortener"`
+}
+
+type ConfigDatabase struct {
+	Server   ConfigServer `json:"server"`
+	Database ConfigDb     `json:"database"`
+}
+
+var cfg ConfigDatabase
 
 var domains = map[string]bool{
 	"https://365.works/":    true,
@@ -24,12 +45,10 @@ var domains = map[string]bool{
 
 var defaultDomain string = "https://365.works/"
 
-var port string = ":8080"
-
 var databases = map[string]map[string]string{}
 
-var database_type string = "mysql"
-var database_connection string = "root:@tcp(127.0.0.1:3306)/go-shortener"
+var database_type string
+var database_connection string
 
 // Struct for json from POST:/new/basic route
 type BasicUrl struct {
@@ -67,7 +86,7 @@ func getUrl(c *gin.Context) {
 	baseDomain := "https://" + origin.Host + "/"
 
 	// Allows localhost origin to act as default domain for dev purposes
-	if origin.Host == "localhost"+port {
+	if origin.Host == "localhost"+cfg.Server.Port {
 		baseDomain = defaultDomain
 	}
 
@@ -212,6 +231,24 @@ type Entries struct {
 }
 
 func main() {
+
+	err := cleanenv.ReadConfig("config.json", &cfg)
+	if err != nil {
+		//
+	}
+
+	// Set database settings from config and connect
+	database_type = cfg.Database.Type
+	database_connection = cfg.Database.User +
+		":" +
+		cfg.Database.Password +
+		"@tcp(" +
+		cfg.Database.Host +
+		":" +
+		cfg.Database.Port +
+		")/" +
+		cfg.Database.Name
+
 	fmt.Println(color.CyanString("Connecting"), "to database...")
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
@@ -262,5 +299,5 @@ func main() {
 	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
 	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
-	r.Run(port)
+	r.Run(cfg.Server.Port)
 }
