@@ -18,9 +18,11 @@ import (
 
 type ConfigServer struct {
 	Port string `json:"port" env:"PORT" env-default:"5432"`
+	Host string `json:"host" env:"HOST" env-default:"localhost"`
+	Name string `json:"name" env:"NAME" env-default:"Go Shortener"`
 }
 
-type ConfigDb struct {
+type ConfigDatabase struct {
 	Type     string `json:"type" env:"TYPE" env-default:"mysql"`
 	User     string `json:"user" env:"USER" env-default:"root"`
 	Password string `json:"password" env:"PASSWORD" env-default:""`
@@ -29,19 +31,14 @@ type ConfigDb struct {
 	Name     string `json:"name" env:"NAME" env-default:"go-shortener"`
 }
 
-type ConfigDatabase struct {
-	Server   ConfigServer `json:"server"`
-	Database ConfigDb     `json:"database"`
+type Config struct {
+	Server        ConfigServer    `json:"server"`
+	Database      ConfigDatabase  `json:"database"`
+	Domains       map[string]bool `json:"domains"`
+	DefaultDomain string          `json:"defaultDomain" env:"DEFAULTDOMAIN" env-default:"https://365.works/"`
 }
 
-var cfg ConfigDatabase
-
-var domains = map[string]bool{
-	"https://365.works/":    true,
-	"https://365werk.nl/":   true,
-	"https://s.365werk.nl/": true,
-	"https://google.com/":   false,
-}
+var cfg Config
 
 var defaultDomain string = "https://365.works/"
 
@@ -114,9 +111,9 @@ func postBasicUrl(c *gin.Context) {
 	longUrl := json.Url
 	var baseDomain string
 	// baseDomain := json.Domain
-	if json.Domain != "" && domains[json.Domain] {
+	if json.Domain != "" && cfg.Domains[json.Domain] {
 		baseDomain = json.Domain
-	} else if domains[json.Domain] {
+	} else if cfg.Domains[json.Domain] {
 		baseDomain = "https://" + origin.Host + "/"
 	} else {
 		baseDomain = defaultDomain
@@ -236,7 +233,7 @@ func main() {
 	if err != nil {
 		//
 	}
-
+	fmt.Println(color.BlueString("Starting"), cfg.Server.Name)
 	// Set database settings from config and connect
 	database_type = cfg.Database.Type
 	database_connection = cfg.Database.User +
@@ -283,7 +280,7 @@ func main() {
 		panic(err)
 	}
 
-	for domain := range domains {
+	for domain := range cfg.Domains {
 		databases[domain] = map[string]string{}
 	}
 	for res.Next() {

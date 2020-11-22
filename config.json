@@ -9,5 +9,12 @@
         "host": "localhost",
         "port": "3306",
         "name": "go-shortener"
-    }
+    },
+    "domains": {
+        "https://365.works/":    true,
+        "https://365werk.nl/":   true,
+        "https://s.365werk.nl/": true,
+        "https://google.com/":   false
+    },
+    "defaultDomain": "https://365.works/"
 }
