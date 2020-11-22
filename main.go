@@ -17,45 +17,46 @@ import (
 )
 
 type ConfigServer struct {
-	Port string `json:"port" env:"PORT" env-default:"5432"`
-	Host string `json:"host" env:"HOST" env-default:"localhost"`
-	Name string `json:"name" env:"NAME" env-default:"Go Shortener"`
+	Port string `json:"port" env:"SV_PORT" env-default:"5432"`
+	Host string `json:"host" env:"SV_HOST" env-default:"localhost"`
+	Name string `json:"name" env:"SV_NAME" env-default:"Go Shortener"`
 }
 
 type ConfigDatabase struct {
-	Type     string `json:"type" env:"TYPE" env-default:"mysql"`
-	User     string `json:"user" env:"USER" env-default:"root"`
-	Password string `json:"password" env:"PASSWORD" env-default:""`
-	Host     string `json:"host" env:"HOST" env-default:"localhost"`
-	Port     string `json:"port" env:"PORT" env-default:"3306"`
-	Name     string `json:"name" env:"NAME" env-default:"go-shortener"`
+	Type     string `json:"type" env:"DB_TYPE" env-default:"mysql"`
+	User     string `json:"user" env:"DB_USER" env-default:"root"`
+	Password string `json:"password" env:"DB_PASSWORD" env-default:""`
+	Host     string `json:"host" env:"DB_HOST" env-default:"localhost"`
+	Port     string `json:"port" env:"DB_PORT" env-default:"3306"`
+	Name     string `json:"name" env:"DB_NAME" env-default:"go-shortener"`
 }
 
 type Config struct {
 	Server        ConfigServer    `json:"server"`
 	Database      ConfigDatabase  `json:"database"`
 	Domains       map[string]bool `json:"domains"`
-	DefaultDomain string          `json:"defaultDomain" env:"DEFAULTDOMAIN" env-default:"https://365.works/"`
+	DefaultDomain string          `json:"defaultDomain" env:"DOMAIN_DEFAULT" env-default:"https://365.works/"`
 }
 
-var cfg Config
-
-var defaultDomain string = "https://365.works/"
-
-var databases = map[string]map[string]string{}
-
-var database_type string
-var database_connection string
-
-// Struct for json from POST:/new/basic route
 type BasicUrl struct {
 	Url    string `form:"url" json:"url" binding:"required"`
 	Domain string `form:"domain" json:"domain"`
 	Custom string `form:"custom" json:"custom"`
 }
 
-func setupRouter() *gin.Engine {
+type Entries struct {
+	Id     int
+	Short  string
+	Long   string
+	Domain string
+}
 
+var cfg Config
+var databases = map[string]map[string]string{}
+var database_type string
+var database_connection string
+
+func setupRouter() *gin.Engine {
 	r := gin.Default()
 	r.Use(location.Default())
 
@@ -84,7 +85,7 @@ func getUrl(c *gin.Context) {
 
 	// Allows localhost origin to act as default domain for dev purposes
 	if origin.Host == "localhost"+cfg.Server.Port {
-		baseDomain = defaultDomain
+		baseDomain = cfg.DefaultDomain
 	}
 
 	longUrl, ok := databases[baseDomain][shortUrl]
@@ -116,7 +117,7 @@ func postBasicUrl(c *gin.Context) {
 	} else if cfg.Domains[json.Domain] {
 		baseDomain = "https://" + origin.Host + "/"
 	} else {
-		baseDomain = defaultDomain
+		baseDomain = cfg.DefaultDomain
 	}
 
 	if json.Custom == "" {
@@ -218,13 +219,6 @@ func StringWithCharset(length int, charset string) string {
 
 func createShort(length int) string {
 	return StringWithCharset(length, charset)
-}
-
-type Entries struct {
-	Id     int
-	Short  string
-	Long   string
-	Domain string
 }
 
 func main() {
