@@ -59,3 +59,7 @@ Use short link
 ```bash
 GET     /:url
 ```
+
+## Database
+
+Currently only MYSQL is supported, see go-shortener.sql for structure
