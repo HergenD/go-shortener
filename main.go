@@ -43,7 +43,7 @@ type Config struct {
 	Database      ConfigDatabase  `json:"database"`
 	Users         ConfigUsers     `json:"users"`
 	Domains       map[string]bool `json:"domains"`
-	DefaultDomain string          `json:"defaultDomain" env:"DOMAIN_DEFAULT" env-default:"https://365.works/"`
+	DefaultDomain string          `json:"defaultDomain" env:"DOMAIN_DEFAULT" env-default:"https://example.com/"`
 	Logfile       string          `json:"logFile" env:"LOG_FILE" env-default:"shortener.log"`
 }
 
@@ -95,7 +95,7 @@ func setupRouter() *gin.Engine {
 
 	//Routes
 	r.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "https://365werk.nl")
+		c.Redirect(http.StatusMovedPermanently, "https://github.com/HergenD/go-shortener")
 	})
 	r.GET("/:url", getUrl)
 	r.POST("/get/all", getAll)
@@ -139,8 +139,7 @@ func getUser(bearer string) User {
 	user_sql := "SELECT * FROM users WHERE `api_key`='" + tokenString + "'"
 	user_row := db.QueryRow(user_sql)
 	user_row.Scan(&user.Id, &user.Username, &user.ApiKey)
-	fmt.Println(user_sql)
-	fmt.Println(user)
+
 	return user
 }
 
@@ -163,10 +162,9 @@ func postBasicUrl(c *gin.Context) {
 	longUrl := json.Url
 
 	var baseDomain string
-	// baseDomain := json.Domain
 	if json.Domain != "" && cfg.Domains[json.Domain] {
 		baseDomain = json.Domain
-	} else if cfg.Domains[json.Domain] {
+	} else if cfg.Domains["https://"+origin.Host+"/"] {
 		baseDomain = "https://" + origin.Host + "/"
 	} else {
 		baseDomain = cfg.DefaultDomain
