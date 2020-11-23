@@ -43,7 +43,7 @@ Users.anonymous controls if anonymous users can create shortlinks, if false, use
 }
 ```
 
-## Enpoints
+## Endpoints
 Create short
 ```bash
 POST    /new/basic
