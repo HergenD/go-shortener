@@ -1,0 +1,20 @@
+{
+    "server": {
+        "port": ":8080"
+    },
+    "database": {
+        "type" : "mysql",
+        "user" : "root",
+        "password": "",
+        "host": "localhost",
+        "port": "3306",
+        "name": "go-shortener"
+    },
+    "domains": {
+        "https://example.com/":    true
+    },
+    "defaultDomain": "https://example.com/",
+    "users": {
+        "anonymous" : false
+    }
+}
