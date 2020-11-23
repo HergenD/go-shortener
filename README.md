@@ -9,7 +9,7 @@ $ go build
 ```bash
 $ cp config-example.json config.json
 ```
-````
+```bash
 $ ./go-shortener
 ```
 
