@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -33,11 +34,17 @@ type ConfigDatabase struct {
 	Name     string `json:"name" env:"DB_NAME" env-default:"go-shortener"`
 }
 
+type ConfigUsers struct {
+	Anonymous bool `json:"anonymous" env:"ANONYMOUS" env-default:"false"`
+}
+
 type Config struct {
 	Server        ConfigServer    `json:"server"`
 	Database      ConfigDatabase  `json:"database"`
+	Users         ConfigUsers     `json:"users"`
 	Domains       map[string]bool `json:"domains"`
 	DefaultDomain string          `json:"defaultDomain" env:"DOMAIN_DEFAULT" env-default:"https://365.works/"`
+	Logfile       string          `json:"logFile" env:"LOG_FILE" env-default:"shortener.log"`
 }
 
 type BasicUrl struct {
@@ -125,7 +132,7 @@ func getUser(bearer string) User {
 	tokenString := bearer[len(BEARER_SCHEMA):]
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer db.Close()
 	var user User
@@ -142,7 +149,10 @@ func postBasicUrl(c *gin.Context) {
 	if c.GetHeader("Authorization") != "" {
 		entry.User = getUser(c.GetHeader("Authorization"))
 	}
-	fmt.Println(entry.User)
+	if entry.User.Id == 0 && cfg.Users.Anonymous == false {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "please provide api key"})
+		return
+	}
 	// Bind JSON from request to variable and set some initials variables
 	origin := location.Get(c)
 	var json BasicUrl
@@ -183,13 +193,13 @@ func parseLong(long string) LongUrl {
 
 	u, err := url.Parse(long)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	if u.Scheme == "" {
 		long = "https://" + long
 		u, err = url.Parse(long)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 	}
 	l.Scheme = u.Scheme
@@ -212,7 +222,7 @@ func createCustomShort(custom string, entry Entry) Entry {
 	// Connect to database
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer db.Close()
 
@@ -235,7 +245,7 @@ func createCustomShort(custom string, entry Entry) Entry {
 
 	_, err = db.Exec(sql)
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(err)
 	}
 
 	return entry
@@ -245,7 +255,7 @@ func createRandomShort(entry Entry) Entry {
 	// Connect to database
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer db.Close()
 
@@ -255,9 +265,9 @@ func createRandomShort(entry Entry) Entry {
 	exists_sql := "SELECT EXISTS(SELECT 1 FROM entries WHERE `Long`='" + entry.Long.Full + "' AND `Domain`='" + entry.Domain + "' AND `User`='" + strconv.Itoa(entry.User.Id) + "')"
 	row := db.QueryRow(exists_sql)
 	if err := row.Scan(&exists); err != nil {
-		//
+		log.Fatal(err)
 	} else if exists {
-		entry_sql := "SELECT `Id`, `Long`, `Short`, `Domain` FROM entries WHERE `Long`='" + entry.Long.Full + "' AND `Domain`='" + entry.Domain + "' AND `User`='" + strconv.Itoa(entry.User.Id) + "' LIMIT 1"
+		entry_sql := "SELECT `Id`, `Long`, `Short`, `Domain` FROM entries WHERE `Long`='" + entry.Long.Full + "' AND `Domain`='" + entry.Domain + "' AND `User`='" + strconv.Itoa(entry.User.Id) + "'  LIMIT 1"
 		entry_row := db.QueryRow(entry_sql)
 		entry_row.Scan(&entry.Id, &entry.Long.Full, &entry.Short, &entry.Domain)
 		return entry
@@ -286,7 +296,7 @@ func createRandomShort(entry Entry) Entry {
 	_, err = db.Exec(sql)
 
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(err)
 	}
 
 	return entry
@@ -310,13 +320,24 @@ func createShort(length int) string {
 }
 
 func main() {
-
+	// Read config file
 	err := cleanenv.ReadConfig("config.json", &cfg)
 	if err != nil {
-		//
+		panic(err)
 	}
+	fmt.Println(cfg.Users.Anonymous)
+	// Set logging to logfile
+	file, err := os.OpenFile(cfg.Logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetOutput(file)
+	log.Println("Starting " + cfg.Server.Name)
+
+	// Start application
 	fmt.Println(color.BlueString("Starting"), cfg.Server.Name)
-	// Set database settings from config and connect
+
+	// Set database settings from config
 	database_type = cfg.Database.Type
 	database_connection = cfg.Database.User +
 		":" +
@@ -328,40 +349,40 @@ func main() {
 		")/" +
 		cfg.Database.Name
 
+	// Connect to database
 	fmt.Println(color.CyanString("Connecting"), "to database...")
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer db.Close()
 
+	// Check database version
 	var version string
-
 	err2 := db.QueryRow("SELECT VERSION()").Scan(&version)
-
 	if err2 != nil {
-		panic(err2)
+		log.Fatal(err2)
 	}
-
 	fmt.Println(color.GreenString("Connected."), "Running version "+version)
 
+	// Count number of entries to be imported
 	var count int
 	count_sql := "SELECT COUNT(Id) FROM entries;"
 	row := db.QueryRow(count_sql)
 	if err := row.Scan(&count); err != nil {
-		//
+		log.Fatal(err)
 	}
 	count_string := strconv.Itoa(count)
 	fmt.Println(color.CyanString("Importing"), count_string+" entries from database...")
 
+	// Query all entries from database
 	res, err := db.Query("SELECT `Id`, `Long`, `Short`, `Domain` FROM entries")
-
 	defer res.Close()
-
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
+	// Create memory database (map) based on imported records
 	for domain := range cfg.Domains {
 		databases[domain] = map[string]string{}
 	}
@@ -376,6 +397,8 @@ func main() {
 		databases[entry.Domain][entry.Short] = entry.Long.Full
 	}
 	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
+
+	// Set up router and finish booting
 	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
 	r.Run(cfg.Server.Port)
