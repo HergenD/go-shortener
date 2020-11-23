@@ -47,6 +47,12 @@ Users.anonymous controls if anonymous users can create shortlinks, if false, use
 Create short
 ```bash
 POST    /new/basic
+
+{
+    "url": "https://example.com/longurl",
+    "custom": "customshort",
+    "domain" "https://domain.com/"
+}
 ```
 
 Use short link
