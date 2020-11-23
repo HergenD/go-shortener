@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -44,11 +46,28 @@ type BasicUrl struct {
 	Custom string `form:"custom" json:"custom"`
 }
 
-type Entries struct {
+type Entry struct {
 	Id     int
 	Short  string
-	Long   string
+	Long   LongUrl
 	Domain string
+	User   User
+}
+
+type LongUrl struct {
+	Full     string
+	Scheme   string
+	Host     string
+	Port     string
+	Path     string
+	Fragment string
+	Query    string
+}
+
+type User struct {
+	Id       int
+	Username string
+	ApiKey   string
 }
 
 var cfg Config
@@ -89,9 +108,9 @@ func getUrl(c *gin.Context) {
 	}
 
 	longUrl, ok := databases[baseDomain][shortUrl]
+
 	if ok {
 		c.Redirect(http.StatusMovedPermanently, longUrl)
-		// c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": longUrl})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"short": shortUrl, "long": false})
 	}
@@ -101,7 +120,29 @@ func getAll(c *gin.Context) {
 	c.JSON(http.StatusOK, databases)
 }
 
+func getUser(bearer string) User {
+	const BEARER_SCHEMA = "Bearer "
+	tokenString := bearer[len(BEARER_SCHEMA):]
+	db, err := sql.Open(database_type, database_connection)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	var user User
+	user_sql := "SELECT * FROM users WHERE `api_key`='" + tokenString + "'"
+	user_row := db.QueryRow(user_sql)
+	user_row.Scan(&user.Id, &user.Username, &user.ApiKey)
+	fmt.Println(user_sql)
+	fmt.Println(user)
+	return user
+}
+
 func postBasicUrl(c *gin.Context) {
+	var entry Entry
+	if c.GetHeader("Authorization") != "" {
+		entry.User = getUser(c.GetHeader("Authorization"))
+	}
+	fmt.Println(entry.User)
 	// Bind JSON from request to variable and set some initials variables
 	origin := location.Get(c)
 	var json BasicUrl
@@ -110,6 +151,7 @@ func postBasicUrl(c *gin.Context) {
 		return
 	}
 	longUrl := json.Url
+
 	var baseDomain string
 	// baseDomain := json.Domain
 	if json.Domain != "" && cfg.Domains[json.Domain] {
@@ -120,15 +162,53 @@ func postBasicUrl(c *gin.Context) {
 		baseDomain = cfg.DefaultDomain
 	}
 
-	if json.Custom == "" {
-		c.JSON(http.StatusOK, createRandomShort(baseDomain, longUrl, c))
-	} else {
-		c.JSON(http.StatusOK, createCustomShort(json.Custom, baseDomain, longUrl, c))
-	}
+	entry.Long = parseLong(longUrl)
+	entry.Domain = baseDomain
 
+	if json.Custom == "" {
+		entry = createRandomShort(entry)
+	} else {
+		entry = createCustomShort(json.Custom, entry)
+	}
+	if entry.Short == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "short url could not be generated"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"short": entry.Domain + entry.Short, "long": entry.Long.Full})
+	return
 }
 
-func createCustomShort(custom string, baseDomain string, longUrl string, c *gin.Context) gin.H {
+func parseLong(long string) LongUrl {
+	var l LongUrl
+
+	u, err := url.Parse(long)
+	if err != nil {
+		panic(err)
+	}
+	if u.Scheme == "" {
+		long = "https://" + long
+		u, err = url.Parse(long)
+		if err != nil {
+			panic(err)
+		}
+	}
+	l.Scheme = u.Scheme
+	l.Full = long
+	l.Host = u.Host
+	host, port, _ := net.SplitHostPort(u.Host)
+	if host != "" && port != "" {
+		l.Host = host
+		l.Port = port
+	}
+
+	l.Path = u.Path
+	l.Fragment = u.Fragment
+	l.Query = u.RawQuery
+
+	return l
+}
+
+func createCustomShort(custom string, entry Entry) Entry {
 	// Connect to database
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
@@ -136,27 +216,32 @@ func createCustomShort(custom string, baseDomain string, longUrl string, c *gin.
 	}
 	defer db.Close()
 
-	shortUrl, found := databases[baseDomain][custom]
-
+	_, found := databases[entry.Domain][custom]
 	if found {
-		return gin.H{"error": "This custom url already exists", "long": longUrl}
+		return entry
 	}
 
+	entry.Short = custom
 	// Create full short url based on domain and update memory database with new short
-	shortUrl = baseDomain + custom
-	databases[baseDomain][custom] = longUrl
+	databases[entry.Domain][entry.Short] = entry.Long.Full
 
 	// Update MYSQL database wih new shortener
-	sql := "INSERT INTO entries(`Short`, `Long`, `Domain`) VALUES ('" + custom + "', '" + longUrl + "', '" + baseDomain + "')"
-	_, err = db.Exec(sql)
+	sql := "INSERT INTO entries" +
+		"(`Short`, `Long`, `Domain`, `LongScheme`, `LongHost`, `LongPort`, `LongPath`, `LongFragment`, `LongQuery`, `User`)" +
+		" VALUES " +
+		"('" + entry.Short + "', '" + entry.Long.Full + "', '" + entry.Domain + "', '" +
+		entry.Long.Scheme + "', '" + entry.Long.Host + "', '" + entry.Long.Port + "', '" + entry.Long.Path + "', '" +
+		entry.Long.Fragment + "', '" + entry.Long.Query + "', '" + strconv.Itoa(entry.User.Id) + "')"
 
+	_, err = db.Exec(sql)
 	if err != nil {
 		panic(err.Error())
 	}
-	return gin.H{"short": shortUrl, "long": longUrl}
+
+	return entry
 }
 
-func createRandomShort(baseDomain string, longUrl string, c *gin.Context) gin.H {
+func createRandomShort(entry Entry) Entry {
 	// Connect to database
 	db, err := sql.Open(database_type, database_connection)
 	if err != nil {
@@ -167,41 +252,44 @@ func createRandomShort(baseDomain string, longUrl string, c *gin.Context) gin.H 
 	// Check if url has been shortened using the given domain
 	// if true, give previously created shortlink
 	var exists bool
-	exists_sql := "SELECT EXISTS(SELECT 1 FROM entries WHERE `Long`='" + longUrl + "' AND `Domain`='" + baseDomain + "')"
+	exists_sql := "SELECT EXISTS(SELECT 1 FROM entries WHERE `Long`='" + entry.Long.Full + "' AND `Domain`='" + entry.Domain + "' AND `User`='" + strconv.Itoa(entry.User.Id) + "')"
 	row := db.QueryRow(exists_sql)
 	if err := row.Scan(&exists); err != nil {
 		//
 	} else if exists {
-		entry_sql := "SELECT * FROM entries WHERE `Long`='" + longUrl + "' AND `Domain`='" + baseDomain + "' LIMIT 1"
+		entry_sql := "SELECT `Id`, `Long`, `Short`, `Domain` FROM entries WHERE `Long`='" + entry.Long.Full + "' AND `Domain`='" + entry.Domain + "' AND `User`='" + strconv.Itoa(entry.User.Id) + "' LIMIT 1"
 		entry_row := db.QueryRow(entry_sql)
-		var entry Entries
-		entry_row.Scan(&entry.Id, &entry.Long, &entry.Short, &entry.Domain)
-		shortUrl := baseDomain + entry.Short
-		return gin.H{"short": shortUrl, "long": longUrl}
+		entry_row.Scan(&entry.Id, &entry.Long.Full, &entry.Short, &entry.Domain)
+		return entry
 	}
 
 	found := true
-	var shortUrl string
 	var short string
 
 	// Create short urlpart, and check if it exists, if it does, generate new short (loop)
 	for found {
 		short = createShort(6)
-		shortUrl, found = databases[baseDomain][short]
+		_, found = databases[entry.Domain][short]
 	}
 
-	// Create full short url based on domain and update memory database with new short
-	shortUrl = baseDomain + short
-	databases[baseDomain][short] = longUrl
+	entry.Short = short
 
+	// Create full short url based on domain and update memory database with new short
+	databases[entry.Domain][entry.Short] = entry.Long.Full
 	// Update MYSQL database wih new shortener
-	sql := "INSERT INTO entries(`Short`, `Long`, `Domain`) VALUES ('" + short + "', '" + longUrl + "', '" + baseDomain + "')"
+	sql := "INSERT INTO entries" +
+		"(`Short`, `Long`, `Domain`, `LongScheme`, `LongHost`, `LongPort`, `LongPath`, `LongFragment`, `LongQuery`, `User`)" +
+		" VALUES " +
+		"('" + entry.Short + "', '" + entry.Long.Full + "', '" + entry.Domain + "', '" +
+		entry.Long.Scheme + "', '" + entry.Long.Host + "', '" + entry.Long.Port + "', '" + entry.Long.Path + "', '" +
+		entry.Long.Fragment + "', '" + entry.Long.Query + "', '" + strconv.Itoa(entry.User.Id) + "')"
 	_, err = db.Exec(sql)
 
 	if err != nil {
 		panic(err.Error())
 	}
-	return gin.H{"short": shortUrl, "long": longUrl}
+
+	return entry
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -266,7 +354,7 @@ func main() {
 	count_string := strconv.Itoa(count)
 	fmt.Println(color.CyanString("Importing"), count_string+" entries from database...")
 
-	res, err := db.Query("SELECT * FROM entries")
+	res, err := db.Query("SELECT `Id`, `Long`, `Short`, `Domain` FROM entries")
 
 	defer res.Close()
 
@@ -278,14 +366,14 @@ func main() {
 		databases[domain] = map[string]string{}
 	}
 	for res.Next() {
-		var entry Entries
-		err := res.Scan(&entry.Id, &entry.Long, &entry.Short, &entry.Domain)
+		var entry Entry
+		err := res.Scan(&entry.Id, &entry.Long.Full, &entry.Short, &entry.Domain)
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		databases[entry.Domain][entry.Short] = entry.Long
+		databases[entry.Domain][entry.Short] = entry.Long.Full
 	}
 	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
 	fmt.Println(color.CyanString("Starting"), "router...")
