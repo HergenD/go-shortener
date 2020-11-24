@@ -1,19 +1,3 @@
-/*
- Navicat Premium Data Transfer
-
- Source Server         : wenote@gcp
- Source Server Type    : MySQL
- Source Server Version : 50647
- Source Host           : 34.91.190.42:3306
- Source Schema         : go-shortener
-
- Target Server Type    : MySQL
- Target Server Version : 50647
- File Encoding         : 65001
-
- Date: 23/11/2020 22:43:46
-*/
-
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
