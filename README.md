@@ -78,3 +78,12 @@ GET     /:url
 ## Database
 
 Currently only MYSQL is supported, see go-shortener.sql for structure
+
+## Live dev service
+This application is running on `http://short.hergen.nl` with anonymous link creation enabled. This means the create endpoint can be used to see how it works.
+You can also see the redirect in action, for example:
+`http://short.hergen.nl/q1l379`
+Or custom:
+`http://short.hergen.nl/git`
+
+This service runs on a free-tier GCP compute engine, so don't be surprised if it does go down :)
