@@ -1,6 +1,21 @@
 # Custom URL Shortner
+Custom URL shortner that allows you to use your own domain(s) to create short URLs.
 
-Requires Go to be installed to compile
+The shortner supports creating random short URLs and custom short (or long, depending on your input) urls. You can use any amount of domains with the shortner, a POST to /create makes a new short link of the domain that was posted to, unless otherwise specified in the postdata (`domain`).
+
+The shortner also allows for restricting short creation with api keys, although this is optional.
+
+Todo:
+- Creating proper user accounts, there is currently no interface for this. If you want to use API keys, add users with generater keys directly in the database
+- Multiple database support / database error handling. The current implementation is not ideal
+- Analytics. Currently clicks on shortlinks are not recorded, this is a priority feature.
+- Platform detection + alternative long links based on platform. This is to support mobile deeplinking based on mobile platform
+- Tests. Currently no tests are in place
+
+Requires:
+- Go
+- MySQL
+
 
 ## Install
 ```bash
@@ -46,12 +61,12 @@ Users.anonymous controls if anonymous users can create shortlinks, if false, use
 ## Endpoints
 Create short
 ```bash
-POST    /new/basic
+POST    /create
 
 {
-    "url": "https://example.com/longurl",
-    "custom": "customshort",
-    "domain" "https://domain.com/"
+    "url": "https://example.com/longurl",       #required
+    "custom": "customshort",                    #optional
+    "domain" "https://domain.com/"              #optional
 }
 ```
 
