@@ -100,8 +100,8 @@ func setupRouter() *gin.Engine {
 		c.Redirect(http.StatusMovedPermanently, "https://github.com/HergenD/go-shortener")
 	})
 	r.GET("/:url", getUrl)
-	r.POST("/get/all", getAll)
-	r.POST("/new/basic", postBasicUrl)
+	// r.POST("/get/all", getAll)
+	r.POST("/create", postUrl)
 
 	return r
 }
@@ -145,7 +145,7 @@ func getUser(bearer string) User {
 	return user
 }
 
-func postBasicUrl(c *gin.Context) {
+func postUrl(c *gin.Context) {
 	var entry Entry
 	if c.GetHeader("Authorization") != "" {
 		entry.User = getUser(c.GetHeader("Authorization"))
