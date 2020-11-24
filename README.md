@@ -46,7 +46,7 @@ Users.anonymous controls if anonymous users can create shortlinks, if false, use
 ## Endpoints
 Create short
 ```bash
-POST    /new/basic
+POST    /create
 
 {
     "url": "https://example.com/longurl",
