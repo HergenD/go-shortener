@@ -109,7 +109,7 @@ func setupRouter() *gin.Engine {
 func getUrl(c *gin.Context) {
 	origin := location.Get(c)
 	shortUrl := c.Param("url")
-	baseDomain := "https://" + origin.Host + "/"
+	baseDomain := origin.Scheme + "://" + origin.Host + "/"
 
 	// Allows localhost origin to act as default domain for dev purposes
 	if origin.Host == "localhost"+cfg.Server.Port {
@@ -166,8 +166,8 @@ func postUrl(c *gin.Context) {
 	var baseDomain string
 	if json.Domain != "" && cfg.Domains[json.Domain] {
 		baseDomain = json.Domain
-	} else if cfg.Domains["https://"+origin.Host+"/"] {
-		baseDomain = "https://" + origin.Host + "/"
+	} else if cfg.Domains[origin.Scheme+"://"+origin.Host+"/"] {
+		baseDomain = origin.Scheme + "://" + origin.Host + "/"
 	} else {
 		baseDomain = cfg.DefaultDomain
 	}
