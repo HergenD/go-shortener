@@ -20,9 +20,11 @@ import (
 )
 
 type ConfigServer struct {
-	Port string `json:"port" env:"SV_PORT" env-default:"5432"`
-	Host string `json:"host" env:"SV_HOST" env-default:"localhost"`
-	Name string `json:"name" env:"SV_NAME" env-default:"Go Shortener"`
+	Port   string `json:"port" env:"SV_PORT" env-default:"5432"`
+	Host   string `json:"host" env:"SV_HOST" env-default:"localhost"`
+	Scheme string `json:"scheme" env:"SV_SCHEME" env-default:"https"`
+	Base   string `json:"base" env:"SV_BASE" env-default:"/"`
+	Name   string `json:"name" env:"SV_NAME" env-default:"Go Shortener"`
 }
 
 type ConfigDatabase struct {
@@ -87,9 +89,9 @@ func setupRouter() *gin.Engine {
 	r.Use(location.Default())
 
 	r.Use(location.New(location.Config{
-		Scheme:  "https",
-		Host:    "365.works",
-		Base:    "/",
+		Scheme:  cfg.Server.Scheme,
+		Host:    cfg.Server.Host,
+		Base:    cfg.Server.Base,
 		Headers: location.Headers{Scheme: "X-Forwarded-Proto", Host: "X-Forwarded-Host"},
 	}))
 
