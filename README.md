@@ -64,9 +64,9 @@ Create short
 POST    /create
 
 {
-    "url": "https://example.com/longurl",
-    "custom": "customshort",
-    "domain" "https://domain.com/"
+    "url": "https://example.com/longurl",       #required
+    "custom": "customshort",                    #optional
+    "domain" "https://domain.com/"              #optional
 }
 ```
 
