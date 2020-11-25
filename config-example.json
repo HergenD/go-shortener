@@ -1,19 +1,23 @@
 {
     "server": {
-        "port": ":8080"
+        "port": ":8080",
+        "scheme": "https",
+        "host": "localhost",
+        "base": "/"
     },
     "database": {
         "type" : "mysql",
-        "user" : "root",
-        "password": "",
+        "user" : "user",
+        "password": "password",
         "host": "localhost",
         "port": "3306",
-        "name": "go-shortener"
+        "name": "gp-shortener"
     },
     "domains": {
         "https://example.com/":    true
     },
     "defaultDomain": "https://example.com/",
+    "baseRedirect": "https://github.com/HergenD/go-shortener",
     "users": {
         "anonymous" : false
     }

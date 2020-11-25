@@ -47,6 +47,7 @@ type Config struct {
 	Domains       map[string]bool `json:"domains"`
 	DefaultDomain string          `json:"defaultDomain" env:"DOMAIN_DEFAULT" env-default:"https://example.com/"`
 	Logfile       string          `json:"logFile" env:"LOG_FILE" env-default:"shortener.log"`
+	Redirect      string          `json:"baseRedirect" env:"BASE_REDIRECT" env-default:"https://github.com/HergenD/go-shortener"`
 }
 
 type BasicUrl struct {
@@ -97,7 +98,7 @@ func setupRouter() *gin.Engine {
 
 	//Routes
 	r.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "https://github.com/HergenD/go-shortener")
+		c.Redirect(http.StatusMovedPermanently, cfg.Redirect)
 	})
 	r.GET("/:url", getUrl)
 	// r.POST("/get/all", getAll)
