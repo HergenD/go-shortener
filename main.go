@@ -64,6 +64,12 @@ type Entry struct {
 	User   User
 }
 
+type Domain struct {
+	Id     int
+	Domain string
+	Active int
+}
+
 type LongUrl struct {
 	Full     string
 	Scheme   string
@@ -321,12 +327,13 @@ func createShort(length int) string {
 }
 
 func main() {
+	bootTime := time.Now().UnixNano()
 	// Read config file
 	err := cleanenv.ReadConfig("config.json", &cfg)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(cfg.Users.Anonymous)
+
 	// Set logging to logfile
 	file, err := os.OpenFile(cfg.Logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -366,30 +373,61 @@ func main() {
 	}
 	fmt.Println(color.GreenString("Connected."), "Running version "+version)
 
-	// Count number of entries to be imported
-	var count int
-	count_sql := "SELECT COUNT(Id) FROM entries;"
-	row := db.QueryRow(count_sql)
-	if err := row.Scan(&count); err != nil {
+	// Count number of domains to be imported
+	var domainCount int
+	domainCountSql := "SELECT COUNT(Id) FROM domains;"
+	domainCountRow := db.QueryRow(domainCountSql)
+	if err := domainCountRow.Scan(&domainCount); err != nil {
 		log.Fatal(err)
 	}
-	count_string := strconv.Itoa(count)
-	fmt.Println(color.CyanString("Importing"), count_string+" entries from database...")
+	domainCountString := strconv.Itoa(domainCount)
+	fmt.Println(color.CyanString("Importing"), domainCountString+" domains from database...")
+
+	// Query all domains from database
+	domains, err := db.Query("SELECT `id`, `domain`, `active` FROM domains")
+	defer domains.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var domainList = map[string]int{}
+
+	for domains.Next() {
+		var domain Domain
+		err := domains.Scan(&domain.Id, &domain.Domain, &domain.Active)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		domainList[domain.Domain] = domain.Active
+	}
+	fmt.Println(color.GreenString("Successfully imported"), domainCountString+" entries from database.")
+
+	// Count number of entries to be imported
+	var entriesCount int
+	entriesCountSql := "SELECT COUNT(Id) FROM entries;"
+	entriesCountRow := db.QueryRow(entriesCountSql)
+	if err := entriesCountRow.Scan(&entriesCount); err != nil {
+		log.Fatal(err)
+	}
+	entriesCountString := strconv.Itoa(entriesCount)
+	fmt.Println(color.CyanString("Importing"), entriesCountString+" entries from database...")
 
 	// Query all entries from database
-	res, err := db.Query("SELECT `Id`, `Long`, `Short`, `Domain` FROM entries")
-	defer res.Close()
+	entries, err := db.Query("SELECT `Id`, `Long`, `Short`, `Domain` FROM entries")
+	defer entries.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create memory database (map) based on imported records
-	for domain := range cfg.Domains {
+	for domain := range domainList {
 		databases[domain] = map[string]string{}
 	}
-	for res.Next() {
+	for entries.Next() {
 		var entry Entry
-		err := res.Scan(&entry.Id, &entry.Long.Full, &entry.Short, &entry.Domain)
+		err := entries.Scan(&entry.Id, &entry.Long.Full, &entry.Short, &entry.Domain)
 
 		if err != nil {
 			log.Fatal(err)
@@ -397,8 +435,12 @@ func main() {
 
 		databases[entry.Domain][entry.Short] = entry.Long.Full
 	}
-	fmt.Println(color.GreenString("Successfully imported"), count_string+" entries from database.")
+	fmt.Println(color.GreenString("Successfully imported"), entriesCountString+" entries from database.")
+	doneTime := time.Now().UnixNano()
 
+	processTime := float64(doneTime-bootTime) / 1000000000
+	processTimeString := fmt.Sprintf("%f", processTime)
+	fmt.Println(color.YellowString("Speed:"), "booting only took "+processTimeString+" seconds")
 	// Set up router and finish booting
 	fmt.Println(color.CyanString("Starting"), "router...")
 	r := setupRouter()
